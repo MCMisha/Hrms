@@ -2,19 +2,17 @@
 
 WORKDIR /src
 
-COPY ["WebAPI/Hrms/Hrms/Hrms.csproj", "WebAPI/Hrms/Hrms/"]
-COPY ["NugetPKGs/", "/localnuget/"]
+COPY ["Hrms.csproj", "./"]
 
-RUN dotnet nuget add source /localnuget \
-    --name LocalPackages
-
-RUN dotnet restore "WebAPI/Hrms/Hrms/Hrms.csproj"
+RUN dotnet restore "Hrms.csproj"
 
 COPY . .
 
-WORKDIR "/src/WebAPI/Hrms/Hrms"
+RUN dotnet publish "Hrms.csproj" \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
-RUN dotnet publish "Hrms.csproj" -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
