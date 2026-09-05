@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option csharp_namespace = "Hrms.GrpcContracts.Compensation";
+
+package compensation;
+
+import "google/protobuf/timestamp.proto";
+
+service CompensationGrpc {
+  rpc CreateInitialCompensation (
+      CreateInitialCompensationRequest
+      ) returns (
+      CreateInitialCompensationResponse
+      );
+}
+
+message CreateInitialCompensationRequest {
+  int32 employee_id = 1;
+  int64 salary_in_grosz = 2;
+  google.protobuf.Timestamp effective_from = 3;
+}
+
+message CreateInitialCompensationResponse {
+  int32 compensation_id = 1;
+}

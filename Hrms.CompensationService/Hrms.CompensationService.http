@@ -1,0 +1,6 @@
+@Hrms.CompensationService_HostAddress = http://localhost:5299
+
+GET {{Hrms.CompensationService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
