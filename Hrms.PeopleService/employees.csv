@@ -1,0 +1,15 @@
+﻿FirstName,LastName,DateOfBirth,Email,Position,Status
+John,Doe,2004-08-16,john.doe@mail.com,Junior Developer,Active
+Anna,Smith,1997-03-25,anna.smith@mail.com,QA Engineer,Vacation
+Michael,Brown,1992-11-10,michael.brown@mail.com,.NET Developer,Active
+Emily,Johnson,2000-06-14,emily.johnson@mail.com,HR Specialist,Inactive
+Daniel,Wilson,1985-01-30,daniel.wilson@mail.com,Project Manager,Active
+Sophia,Taylor,1994-09-12,sophia.taylor@mail.com,UX Designer,Vacation
+David,Anderson,2002-04-05,david.anderson@mail.com,Support Engineer,Active
+Olivia,Thomas,1988-12-19,olivia.thomas@mail.com,Business Analyst,Inactive
+James,Martin,1999-07-01,james.martin@mail.com,Frontend Developer,Active
+Emma,White,1981-02-22,emma.white@mail.com,Team Lead,Vacation
+Robert,Harris,1958-05-11,robert.harris@mail.com,System Administrator,Active
+Laura,Clark,2003-10-03,laura.clark@mail.com,Junior Tester,Active
+Chris,Young,1960-08-20,chris.young@mail.com,Accountant,Active
+Kate,King,1996-01-15,kate.king@mail.com,DevOps Engineer,Active
