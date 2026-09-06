@@ -1,0 +1,59 @@
+﻿apiVersion: v1
+kind: Service
+metadata:
+  name: people-service
+  namespace: hrms
+spec:
+  selector:
+    app: people-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: people-service
+  namespace: hrms
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: people-service
+  template:
+    metadata:
+      labels:
+        app: people-service
+    spec:
+      containers:
+        - name: people-service
+          image: hrms-people:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hrms-db-secret
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hrms-db-secret
+                  key: POSTGRES_PASSWORD
+            - name: ConnectionStrings__PeopleDB
+              value: "Host=people-db;Port=5432;Database=hrms_people;Username=$(DB_USER);Password=$(DB_PASSWORD)"
+            - name: GrpcServices__Compensation
+              value: http://compensation-service:8081
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
