@@ -2,5 +2,5 @@
 
 public enum EmployeeStatus
 {
-    Active, Inactive, Vacation
+    Onboarding, Active, Inactive, Vacation
 }

@@ -1,11 +1,13 @@
 ﻿using System.Threading.Channels;
 using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Hrms.GrpcContracts.Compensation;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.DTO;
 using Hrms.PeopleService.Models.Enums;
 using Hrms.PeopleService.Stores;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Hrms.PeopleService.Controllers;
 
@@ -34,16 +36,23 @@ public class EmployeeController : ControllerBase
         return Ok(_context.Employees.ToList());
     }
 
-    [HttpGet("{id}")]
-    public IActionResult Get(int id)
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> Get(int id)
     {
-        Employee? employee = _context.Employees.FirstOrDefault(x => x.Id == id);
+        Employee? employee = await _context.Employees.FirstOrDefaultAsync(x => x.Id == id);
         if (employee == null)
         {
             return NotFound();
         }
 
         return Ok(employee);
+    }
+
+    [HttpGet("{id:int}/exists")]
+    public async Task<IActionResult> Exists(int id, CancellationToken cancellationToken)
+    {
+        bool exists = await _context.Employees.AnyAsync(x => x.Id == id, cancellationToken);
+        return Ok(exists);
     }
 
     [HttpPost]
@@ -58,24 +67,68 @@ public class EmployeeController : ControllerBase
             DateOfBirth = request.DateOfBirth,
             Email = request.Email,
             Position = request.Position,
-            Status = EmployeeStatus.Active
+            Status = EmployeeStatus.Onboarding
         };
 
         await _context.Employees.AddAsync(employee, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        
-        await _compensationClient.CreateInitialCompensationAsync(
-            new CreateInitialCompensationRequest
+
+        try
+        {
+            await _compensationClient.CreateInitialCompensationAsync(
+                new CreateInitialCompensationRequest
+                {
+                    EmployeeId = employee.Id,
+                    SalaryInGrosz = decimal.ToInt64(
+                        decimal.Round(
+                            request.InitialSalary * 100m,
+                            MidpointRounding.AwayFromZero)),
+                    EffectiveFrom = Timestamp.FromDateTimeOffset(
+                        DateTime.Now)
+                },
+                cancellationToken: cancellationToken);
+            employee.Status = EmployeeStatus.Active;
+            _context.Employees.Update(employee);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (RpcException ex)
+        {
+            if (ex.StatusCode == Grpc.Core.StatusCode.Cancelled)
             {
-                EmployeeId = employee.Id,
-                SalaryInGrosz = decimal.ToInt64(
-                    decimal.Round(
-                        request.InitialSalary * 100m,
-                        MidpointRounding.AwayFromZero)),
-                EffectiveFrom = Timestamp.FromDateTimeOffset(
-                    DateTime.Now)
-            },
-            cancellationToken: cancellationToken);
+                throw;
+            }
+
+            return ex.StatusCode switch
+            {
+                Grpc.Core.StatusCode.InvalidArgument
+                    => BadRequest("Invalid compensation data."),
+
+                Grpc.Core.StatusCode.AlreadyExists
+                    => Conflict("Initial compensation already exists."),
+
+                Grpc.Core.StatusCode.FailedPrecondition
+                    => Conflict("Compensation cannot be created in the current state."),
+
+                Grpc.Core.StatusCode.Unavailable
+                    => StatusCode(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "Compensation service is temporarily unavailable."),
+
+                Grpc.Core.StatusCode.DeadlineExceeded
+                    => StatusCode(
+                        StatusCodes.Status504GatewayTimeout,
+                        "Compensation service did not respond in time."),
+                _
+                    => StatusCode(
+                        StatusCodes.Status500InternalServerError,
+                        "An error occurred while creating initial compensation.")
+            };
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.Message);
+        }
+
         return CreatedAtAction(
             nameof(Get),
             new { id = employee.Id },
