@@ -1,0 +1,15 @@
+﻿FirstName,LastName,DateOfBirth,Email,Position,Salary,Status
+John,Doe,2004-08-16,john.doe@mail.com,Junior Developer,1700.00,Active
+Anna,Smith,1997-03-25,anna.smith@mail.com,QA Engineer,2400.00,Vacation
+Michael,Brown,1992-11-10,michael.brown@mail.com,.NET Developer,3200.00,Active
+Emily,Johnson,2000-06-14,emily.johnson@mail.com,HR Specialist,2100.00,Inactive
+Daniel,Wilson,1985-01-30,daniel.wilson@mail.com,Project Manager,4100.00,Active
+Sophia,Taylor,1994-09-12,sophia.taylor@mail.com,UX Designer,2800.00,Vacation
+David,Anderson,2002-04-05,david.anderson@mail.com,Support Engineer,1900.00,Active
+Olivia,Thomas,1988-12-19,olivia.thomas@mail.com,Business Analyst,3600.00,Inactive
+James,Martin,1999-07-01,james.martin@mail.com,Frontend Developer,2300.00,Active
+Emma,White,1981-02-22,emma.white@mail.com,Team Lead,4500.00,Vacation
+Robert,Harris,1958-05-11,robert.harris@mail.com,System Administrator,5200.00,Active
+Laura,Clark,2003-10-03,laura.clark@mail.com,Junior Tester,1800.00,Active
+Chris,Young,1960-08-20,chris.young@mail.com,Accountant,3900.00,Active
+Kate,King,1996-01-15,kate.king@mail.com,DevOps Engineer,4800.00,Active
