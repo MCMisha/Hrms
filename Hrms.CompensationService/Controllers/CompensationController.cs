@@ -1,5 +1,7 @@
 ﻿using Hrms.CompensationService.Models;
+using Hrms.CompensationService.Models.DTO;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Hrms.CompensationService.Controllers;
 
@@ -35,5 +37,40 @@ public class CompensationController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(compensation);
     }
-    
+
+    [HttpPut("update")]
+    public async Task<IActionResult> Update([FromBody] ChangeCompensationDto changeCompensationDto,
+        CancellationToken cancellationToken)
+    {
+        if (changeCompensationDto.BaseSalary <= 0)
+        {
+            return BadRequest();
+        }
+
+        var existingCompensation =
+            await _context.Compensations.SingleOrDefaultAsync(
+                c => c.EffectiveTo == null && c.EmployeeId == changeCompensationDto.EmployeeId, cancellationToken);
+        if (existingCompensation == null)
+        {
+            return NotFound();
+        }
+
+        if (changeCompensationDto.EffectiveFrom.Date < existingCompensation.EffectiveFrom.Date)
+        {
+            return BadRequest();
+        }
+
+        var updatedCompensation = new Compensation
+        {
+            EmployeeId = changeCompensationDto.EmployeeId,
+            BaseSalary = changeCompensationDto.BaseSalary,
+            EffectiveFrom = changeCompensationDto.EffectiveFrom.Date,
+            EffectiveTo = null
+        };
+        existingCompensation.EffectiveTo = changeCompensationDto.EffectiveFrom.AddDays(-1);
+        _context.Compensations.Add(updatedCompensation);
+        await _context.SaveChangesAsync(cancellationToken);
+        
+        return Ok("Compensation updated");
+    }
 }
