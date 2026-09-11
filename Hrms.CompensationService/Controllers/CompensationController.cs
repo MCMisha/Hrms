@@ -1,4 +1,5 @@
-﻿using Hrms.CompensationService.Models;
+﻿using System.Globalization;
+using Hrms.CompensationService.Models;
 using Hrms.CompensationService.Models.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,37 @@ public class CompensationController : ControllerBase
     public IActionResult GetById(int id)
     {
         Compensation? compensation = _context.Compensations.FirstOrDefault(x => x.Id == id);
+        if (compensation == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(compensation);
+    }
+
+    [HttpGet("employee/{employeeId:int}/at")]
+    public async Task<IActionResult> GetByEmployeeId(
+        int employeeId,
+        [FromQuery] string date,
+        CancellationToken cancellationToken)
+    {
+        if (!DateTime.TryParseExact(
+                date,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var dateTime))
+        {
+            return BadRequest("Date must have format yyyy-MM-dd");
+        }
+
+        Compensation? compensation = await _context.Compensations
+            .SingleOrDefaultAsync(
+                c => c.EmployeeId == employeeId
+                     && c.EffectiveFrom <= dateTime
+                     && (c.EffectiveTo == null || c.EffectiveTo >= dateTime),
+                cancellationToken);
+
         if (compensation == null)
         {
             return NotFound();
@@ -70,7 +102,7 @@ public class CompensationController : ControllerBase
         existingCompensation.EffectiveTo = changeCompensationDto.EffectiveFrom.AddDays(-1);
         _context.Compensations.Add(updatedCompensation);
         await _context.SaveChangesAsync(cancellationToken);
-        
+
         return Ok("Compensation updated");
     }
 }
