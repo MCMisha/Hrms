@@ -105,4 +105,16 @@ public class CompensationController : ControllerBase
 
         return Ok("Compensation updated");
     }
+
+    [HttpGet("employee/{employeeId}/history")]
+    public async Task<IActionResult> EmployeeCompensationHistory(int employeeId, CancellationToken cancellationToken)
+    {
+        var compensationsByEmployee = await _context.Compensations
+            .AsNoTracking()
+            .Where(c => c.EmployeeId == employeeId)
+            .OrderByDescending(c => c.EffectiveFrom)
+            .ToListAsync(cancellationToken);
+        
+        return Ok(compensationsByEmployee);
+    }
 }
