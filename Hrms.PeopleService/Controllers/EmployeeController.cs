@@ -84,7 +84,7 @@ public class EmployeeController : ControllerBase
                             request.InitialSalary * 100m,
                             MidpointRounding.AwayFromZero)),
                     EffectiveFrom = Timestamp.FromDateTimeOffset(
-                        DateTime.Now)
+                        DateTime.UtcNow)
                 },
                 cancellationToken: cancellationToken);
             employee.Status = EmployeeStatus.Active;
@@ -204,6 +204,67 @@ public class EmployeeController : ControllerBase
         return Ok(employee);
     }
 
+    [HttpPatch("{id}/dismiss")]
+    public async Task<IActionResult> Dismiss(int id, CancellationToken cancellationToken)
+    {
+        var employee = await _context.Employees.FirstOrDefaultAsync(emp => emp.Id == id, cancellationToken);
+        if (employee is null)
+        {
+            return NotFound();
+        }
+
+        if (employee.Status == EmployeeStatus.Inactive)
+        {
+            return Conflict("Employee is already inactive.");
+        }
+
+        employee.Status = EmployeeStatus.Inactive;
+        await _context.SaveChangesAsync(cancellationToken);
+        
+        try
+        {
+            await _compensationClient.CloseCurrentCompensationAsync(
+                new CloseCurrentCompensationRequest
+                {
+                    EmployeeId = employee.Id,
+                    EffectiveTo = Timestamp.FromDateTime(
+                        DateTime.UtcNow)
+                },
+                cancellationToken: cancellationToken);
+        }
+        catch (RpcException exception)
+        {
+            return exception.StatusCode switch
+            {
+                Grpc.Core.StatusCode.NotFound =>
+                    Conflict("Employee has no active compensation."),
+
+                Grpc.Core.StatusCode.InvalidArgument =>
+                    BadRequest("Invalid compensation closing date."),
+
+                Grpc.Core.StatusCode.Unavailable =>
+                    StatusCode(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "Compensation service is temporarily unavailable."),
+
+                Grpc.Core.StatusCode.DeadlineExceeded =>
+                    StatusCode(
+                        StatusCodes.Status504GatewayTimeout,
+                        "Compensation service did not respond in time."),
+
+                _ => StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    "An error occurred while closing compensation.")
+            };
+        }
+
+        employee.Status = EmployeeStatus.Inactive;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        
+        return Ok(employee);
+    }
+
     [HttpGet("import/{jobId:guid}")]
     public IActionResult GetImportStatus(Guid jobId)
     {
@@ -216,7 +277,7 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
         Employee? employee = _context.Employees.FirstOrDefault(employee => employee.Id == id);
         if (employee == null)
@@ -226,6 +287,8 @@ public class EmployeeController : ControllerBase
 
         _context.Employees.Remove(employee);
         await _context.SaveChangesAsync();
+        
+        
         return Ok(employee);
     }
 }

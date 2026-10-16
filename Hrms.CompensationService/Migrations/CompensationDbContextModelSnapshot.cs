@@ -44,6 +44,10 @@ namespace Hrms.CompensationService.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId")
+                        .IsUnique()
+                        .HasFilter("\"EffectiveTo\" IS NULL");
+
                     b.ToTable("Compensations");
                 });
 #pragma warning restore 612, 618

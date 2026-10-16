@@ -12,6 +12,12 @@ service CompensationGrpc {
       ) returns (
       CreateInitialCompensationResponse
       );
+
+  rpc CloseCurrentCompensation(
+      CloseCurrentCompensationRequest
+      ) returns (
+      CloseCurrentCompensationResponse
+      );
 }
 
 message CreateInitialCompensationRequest {
@@ -21,5 +27,14 @@ message CreateInitialCompensationRequest {
 }
 
 message CreateInitialCompensationResponse {
+  int32 compensation_id = 1;
+}
+
+message CloseCurrentCompensationRequest {
+  int32 employee_id = 1;
+  google.protobuf.Timestamp effective_to = 2;
+}
+
+message CloseCurrentCompensationResponse {
   int32 compensation_id = 1;
 }
