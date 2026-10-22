@@ -75,8 +75,8 @@ public class EmployeeController : ControllerBase
 
         try
         {
-            await _compensationClient.CreateInitialCompensationAsync(
-                new CreateInitialCompensationRequest
+            await _compensationClient.OpenCompensationAsync(
+                new OpenCompensationRequest
                 {
                     EmployeeId = employee.Id,
                     SalaryInGrosz = decimal.ToInt64(
@@ -217,9 +217,6 @@ public class EmployeeController : ControllerBase
         {
             return Conflict("Employee is already inactive.");
         }
-
-        employee.Status = EmployeeStatus.Inactive;
-        await _context.SaveChangesAsync(cancellationToken);
         
         try
         {
@@ -276,18 +273,104 @@ public class EmployeeController : ControllerBase
         return Ok(job);
     }
 
+    [HttpPost("{id:int}/rehire")]
+    public async Task<IActionResult> Rehire(int id, [FromBody] RehireEmployeeDto rehireEmployeeDto, CancellationToken cancellationToken)
+    {
+        if (rehireEmployeeDto.BaseSalary <= 0)
+        {
+            return BadRequest("BaseSalary is invalid.");
+        }
+
+        if (rehireEmployeeDto.EffectiveFrom.Kind != DateTimeKind.Utc)
+        {
+            return BadRequest("EffectiveFrom is invalid.");
+        }
+        
+        if (rehireEmployeeDto.EffectiveFrom > DateTime.UtcNow)
+        {
+            return BadRequest("EffectiveFrom cannot be in the future.");
+        }
+        
+        Employee? employee = await _context.Employees.FirstOrDefaultAsync(employee => employee.Id == id, cancellationToken);
+        if (employee is null)
+        {
+            return NotFound();
+        } 
+
+        if (employee.Status != EmployeeStatus.Inactive)
+        {
+            return Conflict("Only inactive employees can be rehired.");
+        }
+        
+        try
+        {
+            await _compensationClient.OpenCompensationAsync(
+                new OpenCompensationRequest
+                {
+                    EmployeeId = employee.Id,
+                    SalaryInGrosz = decimal.ToInt64(
+                        decimal.Round(
+                            rehireEmployeeDto.BaseSalary * 100m,
+                            MidpointRounding.AwayFromZero)),
+                    EffectiveFrom = rehireEmployeeDto.EffectiveFrom.ToTimestamp()
+                },
+                cancellationToken: cancellationToken);
+            employee.Status = EmployeeStatus.Active;
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (RpcException ex)
+        {
+            if (ex.StatusCode == Grpc.Core.StatusCode.Cancelled)
+            {
+                throw;
+            }
+
+            return ex.StatusCode switch
+            {
+                Grpc.Core.StatusCode.InvalidArgument
+                    => BadRequest("Invalid compensation data."),
+
+                Grpc.Core.StatusCode.AlreadyExists
+                    => Conflict("Active compensation already exists."),
+
+                Grpc.Core.StatusCode.FailedPrecondition
+                    => Conflict("Compensation cannot be created in the current state."),
+
+                Grpc.Core.StatusCode.Unavailable
+                    => StatusCode(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "Compensation service is temporarily unavailable."),
+
+                Grpc.Core.StatusCode.DeadlineExceeded
+                    => StatusCode(
+                        StatusCodes.Status504GatewayTimeout,
+                        "Compensation service did not respond in time."),
+                _
+                    => StatusCode(
+                        StatusCodes.Status500InternalServerError,
+                        "An error occurred while opening compensation.")
+            };
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, "Internal Server Error");
+        }
+        
+        
+        return Ok(employee);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
         Employee? employee = _context.Employees.FirstOrDefault(employee => employee.Id == id);
-        if (employee == null)
+        if (employee is null)
         {
             return NotFound();
         }
 
         _context.Employees.Remove(employee);
         await _context.SaveChangesAsync();
-        
         
         return Ok(employee);
     }

@@ -31,3 +31,7 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGrpcService<CompensationGrpcService>();
 app.Run();
+
+public partial class Program
+{
+}

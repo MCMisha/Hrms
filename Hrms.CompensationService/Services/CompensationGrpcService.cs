@@ -1,6 +1,5 @@
 ﻿using Grpc.Core;
 using Hrms.GrpcContracts.Compensation;
-using Google.Protobuf.WellKnownTypes;
 using Microsoft.EntityFrameworkCore;
 
 namespace Hrms.CompensationService.Services;
@@ -9,9 +8,9 @@ public class CompensationGrpcService(
     CompensationDbContext context)
     : CompensationGrpc.CompensationGrpcBase
 {
-    public override async Task<CreateInitialCompensationResponse>
-        CreateInitialCompensation(
-            CreateInitialCompensationRequest request,
+    public override async Task<OpenCompensationResponse>
+        OpenCompensation(
+            OpenCompensationRequest request,
             ServerCallContext contextCall)
     {
         if (request.EmployeeId <= 0)
@@ -43,7 +42,7 @@ public class CompensationGrpcService(
         context.Compensations.Add(compensation);
         await context.SaveChangesAsync(contextCall.CancellationToken);
 
-        return new CreateInitialCompensationResponse
+        return new OpenCompensationResponse
         {
             CompensationId = compensation.Id
         };

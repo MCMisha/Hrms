@@ -7,10 +7,10 @@ package compensation;
 import "google/protobuf/timestamp.proto";
 
 service CompensationGrpc {
-  rpc CreateInitialCompensation (
-      CreateInitialCompensationRequest
+  rpc OpenCompensation (
+      OpenCompensationRequest
       ) returns (
-      CreateInitialCompensationResponse
+      OpenCompensationResponse
       );
 
   rpc CloseCurrentCompensation(
@@ -20,13 +20,13 @@ service CompensationGrpc {
       );
 }
 
-message CreateInitialCompensationRequest {
+message OpenCompensationRequest {
   int32 employee_id = 1;
   int64 salary_in_grosz = 2;
   google.protobuf.Timestamp effective_from = 3;
 }
 
-message CreateInitialCompensationResponse {
+message OpenCompensationResponse {
   int32 compensation_id = 1;
 }
 
