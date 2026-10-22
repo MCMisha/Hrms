@@ -31,11 +31,36 @@ public class CompensationGrpcService(
                 new Status(StatusCode.InvalidArgument, "EffectiveFrom is required"));
         }
 
+        var effectiveFrom = request.EffectiveFrom.ToDateTime().Date;
+
+        var latestCompensation = await context.Compensations
+            .Where(c => c.EmployeeId == request.EmployeeId)
+            .OrderByDescending(c => c.EffectiveFrom)
+            .FirstOrDefaultAsync(contextCall.CancellationToken);
+
+        if (latestCompensation is not null &&
+            latestCompensation.EffectiveTo is null)
+        {
+            throw new RpcException(
+                new Status(
+                    StatusCode.AlreadyExists,
+                    "Employee already has an active compensation."));
+        }
+
+        if (latestCompensation?.EffectiveTo is { } effectiveTo &&
+            effectiveFrom <= effectiveTo.Date)
+        {
+            throw new RpcException(
+                new Status(
+                    StatusCode.FailedPrecondition,
+                    "EffectiveFrom must be later than the previous EffectiveTo."));
+        }
+
         var compensation = new Models.Compensation
         {
             EmployeeId = request.EmployeeId,
             BaseSalary = request.SalaryInGrosz / 100m,
-            EffectiveFrom = request.EffectiveFrom.ToDateTime(),
+            EffectiveFrom = effectiveFrom,
             EffectiveTo = null
         };
 
@@ -65,7 +90,7 @@ public class CompensationGrpcService(
                     compensation.EmployeeId == request.EmployeeId &&
                     compensation.EffectiveTo == null,
                 contextCall.CancellationToken);
-        
+
         if (compensation == null)
         {
             throw new RpcException(

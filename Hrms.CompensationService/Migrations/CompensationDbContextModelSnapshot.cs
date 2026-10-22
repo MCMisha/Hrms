@@ -37,7 +37,7 @@ namespace Hrms.CompensationService.Migrations
                         .HasColumnType("date");
 
                     b.Property<DateTime?>("EffectiveTo")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("date");
 
                     b.Property<int>("EmployeeId")
                         .HasColumnType("integer");
