@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
         - name: compensation-service
-          image: hrms-compensation:v7
+          image: hrms-compensation:v8
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

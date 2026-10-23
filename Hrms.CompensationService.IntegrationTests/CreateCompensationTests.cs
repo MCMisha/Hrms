@@ -189,8 +189,7 @@ public sealed class CreateCompensationTests
 
         var closeDate = new DateTime(
             2026, 10, 18,
-            12, 0, 0,
-            DateTimeKind.Utc);
+            0, 0, 0, DateTimeKind.Utc);
 
         var initialCompensation = new Compensation
         {
@@ -288,6 +287,169 @@ public sealed class CreateCompensationTests
             .CloseCurrentCompensationAsync(request));
         
         Assert.Equal(StatusCode.NotFound, exception.StatusCode);
+    }
+
+    [Fact]
+    public async Task FailedPrecondition_WhenNewCompensationStartsAtLastEffectiveTo_NotCreates()
+    {
+        const int employeeId = 1006;
+        var closeDate = new DateTime(2026, 10, 23, 0, 0, 0).ToUniversalTime();
+        var initialCompensation = new Compensation
+        {
+            EmployeeId = employeeId,
+            BaseSalary = 5000m,
+            EffectiveFrom = closeDate.AddMonths(-1),
+            EffectiveTo = closeDate
+        };
+
+        await using (var arrangeScope =
+                     _factory.Services.CreateAsyncScope())
+        {
+            var compensationDbContext = arrangeScope.ServiceProvider.GetRequiredService<CompensationDbContext>();
+            compensationDbContext.Compensations.Add(initialCompensation);
+            await compensationDbContext.SaveChangesAsync();
+        }
+        
+        var handler = _factory.Server.CreateHandler();
+
+        using var channel = GrpcChannel.ForAddress(
+            "http://localhost",
+            new GrpcChannelOptions
+            {
+                HttpHandler = handler
+            });
+
+        var grpcClient =
+            new CompensationGrpc.CompensationGrpcClient(channel);
+
+        var request = new OpenCompensationRequest
+        {
+            EmployeeId = employeeId,
+            EffectiveFrom = closeDate.ToTimestamp(),
+            SalaryInGrosz = 1000
+        };
+
+        // Act
+        var exception = await Assert.ThrowsAsync<RpcException>(async () => await grpcClient
+            .OpenCompensationAsync(request));
+        
+        // Assert
+        Assert.Equal(StatusCode.FailedPrecondition, exception.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreatedNewCompensation_WhenStartsOnNextDay()
+    {
+        const int employeeId = 1007;
+        var closeDate = new DateTime(2026, 10, 23, 0, 0, 0, DateTimeKind.Utc);
+        var initialCompensation = new Compensation
+        {
+            EmployeeId = employeeId,
+            BaseSalary = 5000m,
+            EffectiveFrom = closeDate.AddMonths(-1),
+            EffectiveTo = closeDate
+        };
+
+        await using (var arrangeScope =
+                     _factory.Services.CreateAsyncScope())
+        {
+            var compensationDbContext = arrangeScope.ServiceProvider.GetRequiredService<CompensationDbContext>();
+            compensationDbContext.Compensations.Add(initialCompensation);
+            await compensationDbContext.SaveChangesAsync();
+        }
+        
+        var expectedCompensationId = initialCompensation.Id;
+        
+        var handler = _factory.Server.CreateHandler();
+
+        using var channel = GrpcChannel.ForAddress(
+            "http://localhost",
+            new GrpcChannelOptions
+            {
+                HttpHandler = handler
+            });
+
+        var grpcClient =
+            new CompensationGrpc.CompensationGrpcClient(channel);
+
+        var request = new OpenCompensationRequest
+        {
+            EmployeeId = employeeId,
+            EffectiveFrom = closeDate.AddDays(1).ToTimestamp(),
+            SalaryInGrosz = 500000
+        };
+
+        // Act
+        var response = await grpcClient
+            .OpenCompensationAsync(request);
+        
+        // Assert
+        Assert.True(response.CompensationId > 0);
+        Assert.NotEqual(expectedCompensationId, response.CompensationId);
+        
+        await using var assertScope =
+            _factory.Services.CreateAsyncScope();
+
+        var assertDbContext = assertScope.ServiceProvider
+            .GetRequiredService<CompensationDbContext>();
+
+        var savedCompensation = await assertDbContext.Compensations
+            .AsNoTracking()
+            .SingleAsync(c => c.Id == response.CompensationId);
+        
+        Assert.Equal(employeeId, savedCompensation.EmployeeId);
+        Assert.Equal(closeDate.AddDays(1).Date, savedCompensation.EffectiveFrom);
+        Assert.Equal(5000m, savedCompensation.BaseSalary);
+        Assert.Null(savedCompensation.EffectiveTo);
+    }
+
+    [Fact]
+    public async Task AlreadyExistsCompensation_ThrowsException()
+    {
+        const int employeeId = 1007;
+        var closeDate = new DateTime(2026, 10, 23, 0, 0, 0, DateTimeKind.Utc);
+        var initialCompensation = new Compensation
+        {
+            EmployeeId = employeeId,
+            BaseSalary = 5000m,
+            EffectiveFrom = closeDate.AddMonths(-1),
+            EffectiveTo = null
+        };
+
+        await using (var arrangeScope =
+                     _factory.Services.CreateAsyncScope())
+        {
+            var compensationDbContext = arrangeScope.ServiceProvider.GetRequiredService<CompensationDbContext>();
+            compensationDbContext.Compensations.Add(initialCompensation);
+            await compensationDbContext.SaveChangesAsync();
+        }
+        
+        
+        var handler = _factory.Server.CreateHandler();
+
+        using var channel = GrpcChannel.ForAddress(
+            "http://localhost",
+            new GrpcChannelOptions
+            {
+                HttpHandler = handler
+            });
+
+        var grpcClient =
+            new CompensationGrpc.CompensationGrpcClient(channel);
+
+        var request = new OpenCompensationRequest
+        {
+            EmployeeId = employeeId,
+            EffectiveFrom = closeDate.AddDays(1).ToTimestamp(),
+            SalaryInGrosz = 500000
+        };
+
+        // Act
+        var exception = await Assert.ThrowsAsync<RpcException>(async () => await grpcClient
+            .OpenCompensationAsync(request));
+        
+        // Assert
+        Assert.Equal(StatusCode.AlreadyExists, exception.StatusCode);
     }
     
     public Task DisposeAsync()
