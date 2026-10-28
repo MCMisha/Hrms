@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
         - name: people-service
-          image: hrms-people:v4
+          image: hrms-people:v5
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
