@@ -82,7 +82,13 @@ public class CompensationGrpcService(
                 new Status(StatusCode.InvalidArgument, "EmployeeId is invalid"));
         }
 
-        var effectiveTo = request.EffectiveTo.ToDateTime();
+        if (request.EffectiveTo is null)
+        {
+            throw new RpcException(
+                new Status(StatusCode.InvalidArgument, "EffectiveTo is required."));
+        }
+        
+        var effectiveTo = request.EffectiveTo.ToDateTime().Date;
 
         var compensation = await context.Compensations
             .SingleOrDefaultAsync(
@@ -106,7 +112,7 @@ public class CompensationGrpcService(
         }
 
 
-        compensation.EffectiveTo = request.EffectiveTo.ToDateTime();
+        compensation.EffectiveTo = effectiveTo;
         context.Compensations.Update(compensation);
 
         await context.SaveChangesAsync();

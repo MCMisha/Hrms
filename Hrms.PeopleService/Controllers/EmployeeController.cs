@@ -205,7 +205,7 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpPatch("{id}/dismiss")]
-    public async Task<IActionResult> Dismiss(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Dismiss(int id, [FromBody] DismissEmployeeDto dismissEmployeeDto, CancellationToken cancellationToken)
     {
         var employee = await _context.Employees.FirstOrDefaultAsync(emp => emp.Id == id, cancellationToken);
         if (employee is null)
@@ -218,6 +218,12 @@ public class EmployeeController : ControllerBase
             return Conflict("Employee is already inactive.");
         }
         
+        if (dismissEmployeeDto.EffectiveTo > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return BadRequest("EffectiveTo cannot be in the future");
+        }
+        
+        var effectiveToDateTime = dismissEmployeeDto.EffectiveTo.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         try
         {
             await _compensationClient.CloseCurrentCompensationAsync(
@@ -225,7 +231,7 @@ public class EmployeeController : ControllerBase
                 {
                     EmployeeId = employee.Id,
                     EffectiveTo = Timestamp.FromDateTime(
-                        DateTime.UtcNow)
+                        effectiveToDateTime)
                 },
                 cancellationToken: cancellationToken);
         }
@@ -257,7 +263,6 @@ public class EmployeeController : ControllerBase
 
         employee.Status = EmployeeStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);
-
         
         return Ok(employee);
     }
