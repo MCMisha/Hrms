@@ -2,10 +2,13 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hrms.GrpcContracts.Compensation;
+using Hrms.PeopleService.Interfaces;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.DTO;
 using Hrms.PeopleService.Models.Enums;
+using Hrms.PeopleService.Services;
 using Hrms.PeopleService.Stores;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,15 +22,18 @@ public class EmployeeController : ControllerBase
     private readonly Channel<ImportJob> _channel;
     private readonly ImportJobStore _jobStore;
     private readonly CompensationGrpc.CompensationGrpcClient _compensationClient;
+    private readonly IEmployeeLifecycleService _employeeLifecycleService;
 
     public EmployeeController(PeopleDbContext context,
         Channel<ImportJob> channel, ImportJobStore importJobStore,
-        CompensationGrpc.CompensationGrpcClient compensationClient)
+        CompensationGrpc.CompensationGrpcClient compensationClient,
+        IEmployeeLifecycleService employeeLifecycleService)
     {
         _context = context;
         _channel = channel;
         _jobStore = importJobStore;
         _compensationClient = compensationClient;
+        _employeeLifecycleService = employeeLifecycleService;
     }
 
     [HttpGet]
@@ -205,66 +211,28 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpPatch("{id}/dismiss")]
-    public async Task<IActionResult> Dismiss(int id, [FromBody] DismissEmployeeDto dismissEmployeeDto, CancellationToken cancellationToken)
+    public async Task<IActionResult> Dismiss(int id, [FromBody] DismissEmployeeDto dismissEmployeeDto,
+        CancellationToken cancellationToken)
     {
-        var employee = await _context.Employees.FirstOrDefaultAsync(emp => emp.Id == id, cancellationToken);
-        if (employee is null)
+        var result = await _employeeLifecycleService.DismissAsync(
+            id,
+            dismissEmployeeDto.EffectiveTo,
+            cancellationToken);
+
+        return result.Status switch
         {
-            return NotFound();
-        }
-
-        if (employee.Status == EmployeeStatus.Inactive)
-        {
-            return Conflict("Employee is already inactive.");
-        }
-        
-        if (dismissEmployeeDto.EffectiveTo > DateOnly.FromDateTime(DateTime.UtcNow))
-        {
-            return BadRequest("EffectiveTo cannot be in the future");
-        }
-        
-        var effectiveToDateTime = dismissEmployeeDto.EffectiveTo.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        try
-        {
-            await _compensationClient.CloseCurrentCompensationAsync(
-                new CloseCurrentCompensationRequest
-                {
-                    EmployeeId = employee.Id,
-                    EffectiveTo = Timestamp.FromDateTime(
-                        effectiveToDateTime)
-                },
-                cancellationToken: cancellationToken);
-        }
-        catch (RpcException exception)
-        {
-            return exception.StatusCode switch
-            {
-                Grpc.Core.StatusCode.NotFound =>
-                    Conflict("Employee has no active compensation."),
-
-                Grpc.Core.StatusCode.InvalidArgument =>
-                    BadRequest("Invalid compensation closing date."),
-
-                Grpc.Core.StatusCode.Unavailable =>
-                    StatusCode(
-                        StatusCodes.Status503ServiceUnavailable,
-                        "Compensation service is temporarily unavailable."),
-
-                Grpc.Core.StatusCode.DeadlineExceeded =>
-                    StatusCode(
-                        StatusCodes.Status504GatewayTimeout,
-                        "Compensation service did not respond in time."),
-
-                _ => StatusCode(
-                    StatusCodes.Status500InternalServerError,
-                    "An error occurred while closing compensation.")
-            };
-        }
-
-        employee.Status = EmployeeStatus.Inactive;
-        await _context.SaveChangesAsync(cancellationToken);
-        
-        return Ok(employee);
+            EmployeeLifecycleStatus.Conflict => Conflict("Employee cannot be dismissed in the current state."),
+            EmployeeLifecycleStatus.InvalidDate => BadRequest("Invalid dismissal date."),
+            EmployeeLifecycleStatus.NotFound => NotFound(),
+            EmployeeLifecycleStatus.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable,
+                "Compensation service is temporarily unavailable."),
+            EmployeeLifecycleStatus.DependencyTimeout => StatusCode(StatusCodes.Status504GatewayTimeout,
+                "Compensation service did not respond in time."),
+            EmployeeLifecycleStatus.Success => Ok(result.Employee),
+            EmployeeLifecycleStatus.DependencyFailure => StatusCode(StatusCodes.Status500InternalServerError,
+                "Internal server error."),
+            _ => throw new ArgumentOutOfRangeException()
+        };
     }
 
     [HttpGet("import/{jobId:guid}")]
@@ -279,90 +247,48 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpPost("{id:int}/rehire")]
-    public async Task<IActionResult> Rehire(int id, [FromBody] RehireEmployeeDto rehireEmployeeDto, CancellationToken cancellationToken)
+    public async Task<IActionResult> Rehire(
+        int id,
+        [FromBody] RehireEmployeeDto request,
+        CancellationToken cancellationToken)
     {
-        if (rehireEmployeeDto.BaseSalary <= 0)
-        {
-            return BadRequest("BaseSalary is invalid.");
-        }
+        var result = await _employeeLifecycleService.RehireAsync(
+            id,
+            request.BaseSalary,
+            request.EffectiveFrom,
+            cancellationToken);
 
-        if (rehireEmployeeDto.EffectiveFrom.Kind != DateTimeKind.Utc)
+        return result.Status switch
         {
-            return BadRequest("EffectiveFrom is invalid.");
-        }
-        
-        if (rehireEmployeeDto.EffectiveFrom > DateTime.UtcNow)
-        {
-            return BadRequest("EffectiveFrom cannot be in the future.");
-        }
-        
-        Employee? employee = await _context.Employees.FirstOrDefaultAsync(employee => employee.Id == id, cancellationToken);
-        if (employee is null)
-        {
-            return NotFound();
-        } 
+            EmployeeLifecycleStatus.Success =>
+                Ok(result.Employee),
 
-        if (employee.Status != EmployeeStatus.Inactive)
-        {
-            return Conflict("Only inactive employees can be rehired.");
-        }
-        
-        try
-        {
-            await _compensationClient.OpenCompensationAsync(
-                new OpenCompensationRequest
-                {
-                    EmployeeId = employee.Id,
-                    SalaryInGrosz = decimal.ToInt64(
-                        decimal.Round(
-                            rehireEmployeeDto.BaseSalary * 100m,
-                            MidpointRounding.AwayFromZero)),
-                    EffectiveFrom = rehireEmployeeDto.EffectiveFrom.ToTimestamp()
-                },
-                cancellationToken: cancellationToken);
-            employee.Status = EmployeeStatus.Active;
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (RpcException ex)
-        {
-            if (ex.StatusCode == Grpc.Core.StatusCode.Cancelled)
-            {
-                throw;
-            }
+            EmployeeLifecycleStatus.NotFound =>
+                NotFound(),
 
-            return ex.StatusCode switch
-            {
-                Grpc.Core.StatusCode.InvalidArgument
-                    => BadRequest("Invalid compensation data."),
+            EmployeeLifecycleStatus.InvalidSalary =>
+                BadRequest("BaseSalary is invalid."),
 
-                Grpc.Core.StatusCode.AlreadyExists
-                    => Conflict("Active compensation already exists."),
+            EmployeeLifecycleStatus.InvalidDate =>
+                BadRequest("EffectiveFrom must be UTC and cannot be in the future."),
 
-                Grpc.Core.StatusCode.FailedPrecondition
-                    => Conflict("Compensation cannot be created in the current state."),
+            EmployeeLifecycleStatus.InvalidCompensationData =>
+                BadRequest("Invalid compensation data."),
 
-                Grpc.Core.StatusCode.Unavailable
-                    => StatusCode(
-                        StatusCodes.Status503ServiceUnavailable,
-                        "Compensation service is temporarily unavailable."),
+            EmployeeLifecycleStatus.Conflict =>
+                Conflict("Employee cannot be rehired in the current state."),
 
-                Grpc.Core.StatusCode.DeadlineExceeded
-                    => StatusCode(
-                        StatusCodes.Status504GatewayTimeout,
-                        "Compensation service did not respond in time."),
-                _
-                    => StatusCode(
-                        StatusCodes.Status500InternalServerError,
-                        "An error occurred while opening compensation.")
-            };
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, "Internal Server Error");
-        }
-        
-        
-        return Ok(employee);
+            EmployeeLifecycleStatus.DependencyUnavailable =>
+                StatusCode(503, "Compensation service is temporarily unavailable."),
+
+            EmployeeLifecycleStatus.DependencyTimeout =>
+                StatusCode(504, "Compensation service did not respond in time."),
+
+            EmployeeLifecycleStatus.DependencyFailure =>
+                StatusCode(500, "An error occurred while opening compensation."),
+
+            _ => StatusCode(500, "Unexpected operation result.")
+        };
     }
 
     [HttpDelete("{id}")]
@@ -376,7 +302,7 @@ public class EmployeeController : ControllerBase
 
         _context.Employees.Remove(employee);
         await _context.SaveChangesAsync();
-        
+
         return Ok(employee);
     }
 }

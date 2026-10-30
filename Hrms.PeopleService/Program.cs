@@ -1,7 +1,9 @@
 using System.Threading.Channels;
 using Hrms.GrpcContracts.Compensation;
 using Hrms.PeopleService;
+using Hrms.PeopleService.Interfaces;
 using Hrms.PeopleService.Models;
+using Hrms.PeopleService.Services;
 using Hrms.PeopleService.Services.Background;
 using Hrms.PeopleService.Stores;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +30,7 @@ builder.Services.AddSingleton(
     Channel.CreateUnbounded<ImportJob>());
 builder.Services.AddSingleton<ImportJobStore>();
 
+builder.Services.AddScoped<IEmployeeLifecycleService, EmployeeLifecycleService>();
 builder.Services.AddHostedService<EmployeeImportBackgroundService>();
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
