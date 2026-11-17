@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hrms.PeopleService", "Hrms.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hrms.CompensationService.IntegrationTests", "Hrms.CompensationService.IntegrationTests\Hrms.CompensationService.IntegrationTests.csproj", "{374743DA-1E3A-418E-A99B-08C24610435C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hrms.PeopleService.IntegrationTests", "Hrms.PeopleService.IntegrationTests\Hrms.PeopleService.IntegrationTests.csproj", "{5EF2613F-1A3E-486C-B976-B7C47AD87E8E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -43,6 +45,10 @@ Global
 		{374743DA-1E3A-418E-A99B-08C24610435C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{374743DA-1E3A-418E-A99B-08C24610435C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{374743DA-1E3A-418E-A99B-08C24610435C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EF2613F-1A3E-486C-B976-B7C47AD87E8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EF2613F-1A3E-486C-B976-B7C47AD87E8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EF2613F-1A3E-486C-B976-B7C47AD87E8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EF2613F-1A3E-486C-B976-B7C47AD87E8E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
