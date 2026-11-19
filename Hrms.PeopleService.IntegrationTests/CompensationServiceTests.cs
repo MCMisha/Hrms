@@ -23,7 +23,7 @@ public class CompensationServiceTests
     public CompensationServiceTests(PeopleApiFactory factory)
     {
         _factory = factory;
-        _client = _factory.CreateClient();
+        _client = factory.CreateClient();
     }
 
     public async Task InitializeAsync()
@@ -62,7 +62,7 @@ public class CompensationServiceTests
             Status = EmployeeStatus.Active
         };
 
-        await using (var scope = _factory.Services.CreateAsyncScope())
+        await using (var scope = factory.Services.CreateAsyncScope())
         {
             var peopleDbContext = scope.ServiceProvider.GetRequiredService<PeopleDbContext>();
             peopleDbContext.Employees.Add(existingEmployee);

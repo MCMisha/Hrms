@@ -7,7 +7,10 @@ public class PeopleDbContext : DbContext
 {
     private readonly IConfiguration _configuration; 
     
-    public PeopleDbContext(IConfiguration configuration)
+    public PeopleDbContext(
+        DbContextOptions<PeopleDbContext> options,
+        IConfiguration configuration)
+        : base(options)
     {
         _configuration = configuration;
     }

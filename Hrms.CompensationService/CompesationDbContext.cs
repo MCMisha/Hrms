@@ -7,7 +7,10 @@ public class CompensationDbContext : DbContext
 {
     private readonly IConfiguration _configuration; 
     
-    public CompensationDbContext(IConfiguration configuration)
+    public CompensationDbContext(
+        DbContextOptions<CompensationDbContext> options,
+        IConfiguration configuration)
+        : base(options)
     {
         _configuration = configuration;
     }
