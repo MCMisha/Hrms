@@ -5,7 +5,6 @@ using Grpc.Net.Client;
 using Hrms.CompensationService.Models;
 using Hrms.CompensationService.Models.DTO;
 using Hrms.GrpcContracts.Compensation;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
