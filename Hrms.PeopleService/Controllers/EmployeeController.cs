@@ -2,6 +2,8 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hrms.GrpcContracts.Compensation;
+using Hrms.PeopleService.Employees.Commands;
+using Hrms.PeopleService.Employees.Queries;
 using Hrms.PeopleService.Interfaces;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.DTO;
@@ -43,9 +45,12 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    public async Task<IActionResult> Get(int id)
+    public async Task<IActionResult> Get(int id, [FromServices] GetEmployeeByIdHandler handler,
+        CancellationToken cancellationToken)
     {
-        Employee? employee = await _context.Employees.FirstOrDefaultAsync(x => x.Id == id);
+        var employee = await handler.HandleAsync(
+            new GetEmployeeByIdQuery(id),
+            cancellationToken);
         if (employee == null)
         {
             return NotFound();
@@ -232,6 +237,30 @@ public class EmployeeController : ControllerBase
             EmployeeLifecycleStatus.DependencyFailure => StatusCode(StatusCodes.Status500InternalServerError,
                 "Internal server error."),
             _ => throw new ArgumentOutOfRangeException()
+        };
+    }
+
+    [HttpPatch("{id}/position")]
+    public async Task<IActionResult> UpdatePosition(int id,
+        [FromServices] UpdateEmployeePositionHandler updateEmployeePositionHandler,
+        [FromBody] UpdateEmployeePositionCommand body,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(body.Position))
+        {
+            return BadRequest("Position is empty.");
+        }
+
+        var res = await updateEmployeePositionHandler.HandleAsync(body with { EmployeeId = id },
+            cancellationToken);
+
+        return res.Status switch
+        {
+            UpdateEmployeePositionStatus.Updated => Ok(res.Employee),
+            UpdateEmployeePositionStatus.NotFound => NotFound(),
+            UpdateEmployeePositionStatus.Inactive =>
+                Conflict("Only active employees can change position."),
+            _ => throw new InvalidOperationException("Unexpected update status.")
         };
     }
 

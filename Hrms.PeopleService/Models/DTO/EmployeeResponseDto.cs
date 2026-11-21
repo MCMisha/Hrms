@@ -2,8 +2,8 @@
 
 namespace Hrms.PeopleService.Models.DTO;
 
-public record EmployeeResponse(
-    Guid Id,
+public record EmployeeResponseDto(
+    int Id,
     string FirstName,
     string LastName,
     string Email,

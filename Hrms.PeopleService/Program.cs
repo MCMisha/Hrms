@@ -1,7 +1,11 @@
 using System.Threading.Channels;
 using Hrms.GrpcContracts.Compensation;
 using Hrms.PeopleService;
+using Hrms.PeopleService.Converters;
+using Hrms.PeopleService.Employees.Commands;
+using Hrms.PeopleService.Employees.Queries;
 using Hrms.PeopleService.Interfaces;
+using Hrms.PeopleService.Interfaces.Converters;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Services;
 using Hrms.PeopleService.Services.Background;
@@ -31,6 +35,10 @@ builder.Services.AddSingleton(
 builder.Services.AddSingleton<ImportJobStore>();
 
 builder.Services.AddScoped<IEmployeeLifecycleService, EmployeeLifecycleService>();
+builder.Services.AddScoped<GetEmployeeByIdHandler>();
+builder.Services.AddScoped<UpdateEmployeePositionHandler>();
+
+builder.Services.AddScoped<IEmployeeConverter, EmployeeConverter>();
 builder.Services.AddHostedService<EmployeeImportBackgroundService>();
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
