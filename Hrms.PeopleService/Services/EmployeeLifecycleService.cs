@@ -1,7 +1,4 @@
-﻿using Google.Protobuf.WellKnownTypes;
-using Grpc.Core;
-using Hrms.GrpcContracts.Compensation;
-using Hrms.PeopleService.Interfaces;
+﻿using Hrms.PeopleService.Interfaces;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -11,12 +8,12 @@ namespace Hrms.PeopleService.Services;
 public class EmployeeLifecycleService : IEmployeeLifecycleService
 {
     private readonly PeopleDbContext _context;
-    private readonly CompensationGrpc.CompensationGrpcClient _client;
+    private readonly ICompensationGateway _compensationGateway;
 
-    public EmployeeLifecycleService(PeopleDbContext context, CompensationGrpc.CompensationGrpcClient client)
+    public EmployeeLifecycleService(PeopleDbContext context, ICompensationGateway compensationGateway)
     {
         _context = context;
-        _client = client;
+        _compensationGateway = compensationGateway;
     }
 
     public async Task<EmployeeLifecycleResult> DismissAsync(int employeeId, DateOnly effectiveTo,
@@ -38,48 +35,39 @@ public class EmployeeLifecycleService : IEmployeeLifecycleService
             return new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidDate, employee);
         }
 
-        var effectiveToDateTime = effectiveTo.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        try
+        var result = await _compensationGateway.CloseAsync(
+            employeeId,
+            effectiveTo,
+            cancellationToken);
+
+        if (result.Status != CompensationStatus.Success)
         {
-            await _client.CloseCurrentCompensationAsync(
-                new CloseCurrentCompensationRequest
-                {
-                    EmployeeId = employee.Id,
-                    EffectiveTo = Timestamp.FromDateTime(
-                        effectiveToDateTime)
-                },
-                cancellationToken: cancellationToken);
-        }
-        catch (RpcException exception)
-        {
-            if (exception.StatusCode == StatusCode.Cancelled)
+            var status = result.Status switch
             {
-                throw;
-            }
+                CompensationStatus.NotFound or CompensationStatus.Conflict =>
+                    EmployeeLifecycleStatus.Conflict,
 
-            return exception.StatusCode switch
-            {
-                StatusCode.NotFound =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.Conflict, employee),
+                CompensationStatus.InvalidData =>
+                    EmployeeLifecycleStatus.InvalidDate,
 
-                StatusCode.InvalidArgument =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidDate, employee),
+                CompensationStatus.Unavailable =>
+                    EmployeeLifecycleStatus.DependencyUnavailable,
 
-                StatusCode.Unavailable =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.DependencyUnavailable, employee),
+                CompensationStatus.Timeout =>
+                    EmployeeLifecycleStatus.DependencyTimeout,
 
-                StatusCode.DeadlineExceeded =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.DependencyTimeout, employee),
-
-                _ => new EmployeeLifecycleResult(
-                    EmployeeLifecycleStatus.DependencyFailure)
+                _ => EmployeeLifecycleStatus.DependencyFailure
             };
+
+            return new EmployeeLifecycleResult(status, employee);
         }
 
         employee.Status = EmployeeStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new EmployeeLifecycleResult(EmployeeLifecycleStatus.Success, employee);
+        return new EmployeeLifecycleResult(
+            EmployeeLifecycleStatus.Success,
+            employee);
     }
 
     public async Task<EmployeeLifecycleResult> RehireAsync(
@@ -98,25 +86,7 @@ public class EmployeeLifecycleService : IEmployeeLifecycleService
         {
             return new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidDate);
         }
-
-        long salaryInGrosz;
-
-        try
-        {
-            salaryInGrosz = decimal.ToInt64(
-                decimal.Round(
-                    baseSalary * 100m,
-                    MidpointRounding.AwayFromZero));
-        }
-        catch (OverflowException)
-        {
-            return new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidSalary);
-        }
-
-        if (salaryInGrosz <= 0)
-        {
-            return new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidSalary);
-        }
+        
 
         var employee = await _context.Employees
             .FirstOrDefaultAsync(
@@ -133,42 +103,34 @@ public class EmployeeLifecycleService : IEmployeeLifecycleService
             return new EmployeeLifecycleResult(EmployeeLifecycleStatus.Conflict);
         }
 
-        try
+        var result = await _compensationGateway.OpenAsync(
+            employee.Id,
+            baseSalary,
+            effectiveFrom,
+            cancellationToken);
+        if (result.Status != CompensationStatus.Success)
         {
-            await _client.OpenCompensationAsync(
-                new OpenCompensationRequest
-                {
-                    EmployeeId = employee.Id,
-                    SalaryInGrosz = salaryInGrosz,
-                    EffectiveFrom = effectiveFrom.ToTimestamp()
-                },
-                cancellationToken: cancellationToken);
-        }
-        catch (RpcException exception)
-        {
-            if (exception.StatusCode == StatusCode.Cancelled)
+            var status = result.Status switch
             {
-                throw;
-            }
+                CompensationStatus.NotFound or CompensationStatus.Conflict =>
+                    EmployeeLifecycleStatus.Conflict,
+                
+                CompensationStatus.InvalidSalary => EmployeeLifecycleStatus.InvalidSalary,
 
-            return exception.StatusCode switch
-            {
-                StatusCode.InvalidArgument =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.InvalidCompensationData),
+                CompensationStatus.InvalidData =>
+                    EmployeeLifecycleStatus.InvalidCompensationData,
 
-                StatusCode.AlreadyExists or StatusCode.FailedPrecondition =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.Conflict),
+                CompensationStatus.Unavailable =>
+                    EmployeeLifecycleStatus.DependencyUnavailable,
 
-                StatusCode.Unavailable =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.DependencyUnavailable),
+                CompensationStatus.Timeout =>
+                    EmployeeLifecycleStatus.DependencyTimeout,
 
-                StatusCode.DeadlineExceeded =>
-                    new EmployeeLifecycleResult(EmployeeLifecycleStatus.DependencyTimeout),
-
-                _ => new EmployeeLifecycleResult(EmployeeLifecycleStatus.DependencyFailure)
+                _ => EmployeeLifecycleStatus.DependencyFailure
             };
+            return new EmployeeLifecycleResult(status, employee);
         }
-
+        
         employee.Status = EmployeeStatus.Active;
         await _context.SaveChangesAsync(cancellationToken);
 

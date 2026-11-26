@@ -35,6 +35,8 @@ builder.Services.AddSingleton(
 builder.Services.AddSingleton<ImportJobStore>();
 
 builder.Services.AddScoped<IEmployeeLifecycleService, EmployeeLifecycleService>();
+builder.Services.AddScoped<ICompensationGateway, CompensationGateway>();
+
 builder.Services.AddScoped<GetEmployeeByIdHandler>();
 builder.Services.AddScoped<UpdateEmployeePositionHandler>();
 
