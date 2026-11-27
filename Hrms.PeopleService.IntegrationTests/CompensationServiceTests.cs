@@ -4,6 +4,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Hrms.GrpcContracts.Compensation;
+using Hrms.PeopleService.Interfaces;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.DTO;
 using Hrms.PeopleService.Models.Enums;
@@ -197,6 +198,61 @@ public class CompensationServiceTests
         Assert.Equal(EmployeeStatus.Inactive, savedEmployee.Status);
     }
 
+    [Fact]
+    public async Task Rehire_WhenCompensationOpensSuccessfully_ActivatesEmployee()
+    {
+        var gateway = new SuccessfulCompensationGateway();
+
+        await using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ICompensationGateway>();
+                services.AddSingleton<ICompensationGateway>(gateway);
+            });
+        });
+        
+        var dateOfBirth = new DateTime(1989, 01, 01);
+        var existingEmployee = new Employee
+        {
+            DateOfBirth = dateOfBirth,
+            FirstName = "John",
+            LastName = "Doe",
+            Email = "john.doe@mail.com",
+            Position = "Test position",
+            Status = EmployeeStatus.Inactive
+        };
+        
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var peopleDbContext = scope.ServiceProvider.GetRequiredService<PeopleDbContext>();
+            peopleDbContext.Employees.Add(existingEmployee);
+            await peopleDbContext.SaveChangesAsync();
+        }
+
+        var employeeId = existingEmployee.Id;
+        using var client = factory.CreateClient();
+
+        RehireEmployeeDto requestBody = new RehireEmployeeDto(1000, 
+            new DateTime(2026, 11, 17, 0, 0, 0, DateTimeKind.Utc));
+        // Act
+        using var response = await client.PostAsJsonAsync(
+            $"/Employee/{employeeId}/rehire",
+            requestBody);
+        
+        // Assert
+        Assert.Equal(1, gateway.OpenCallCount);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        
+        await using var assertScope = factory.Services.CreateAsyncScope();
+        var db = assertScope.ServiceProvider.GetRequiredService<PeopleDbContext>();
+
+        var savedEmployee = await db.Employees
+            .AsNoTracking()
+            .SingleAsync(e => e.Id == employeeId);
+        Assert.Equal(EmployeeStatus.Active, savedEmployee.Status);
+    }
+    
     public Task DisposeAsync()
     {
         return Task.CompletedTask;
