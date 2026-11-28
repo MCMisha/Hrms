@@ -39,9 +39,30 @@ public class EmployeeController : ControllerBase
     }
 
     [HttpGet]
-    public IActionResult Get()
+    public async Task<IActionResult> Get(CancellationToken cancellationToken,
+        [FromQuery] string? search = null, [FromQuery] EmployeeStatus? status = null)
     {
-        return Ok(_context.Employees.ToList());
+        var query = _context.Employees.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+
+            query = query.Where(emp =>
+                EF.Functions.ILike(emp.LastName, pattern) ||
+                EF.Functions.ILike(emp.FirstName, pattern));
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(emp => emp.Status == status.Value);
+        }
+
+        var employees = await query
+            .OrderBy(emp => emp.Id)
+            .ToListAsync(cancellationToken);
+
+        return Ok(employees);
     }
 
     [HttpGet("{id:int}")]
