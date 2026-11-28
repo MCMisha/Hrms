@@ -1,17 +1,15 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
-using Hrms.GrpcContracts.Compensation;
 using Hrms.PeopleService.Employees.Commands;
 using Hrms.PeopleService.Models;
 using Hrms.PeopleService.Models.Enums;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Hrms.PeopleService.IntegrationTests;
 
-public class UpdateEmployeePositionTests : IClassFixture<PeopleApiFactory>, IAsyncLifetime
+public class UpdateEmployeePositionTests
+    : IClassFixture<PeopleApiFactory>, IDisposable
 {
     private readonly PeopleApiFactory _factory;
     private readonly HttpClient _client;
@@ -22,74 +20,63 @@ public class UpdateEmployeePositionTests : IClassFixture<PeopleApiFactory>, IAsy
         _client = factory.CreateClient();
     }
 
-    public async Task InitializeAsync()
-    {
-        using var factory = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<CompensationGrpc.CompensationGrpcClient>();
-                services.AddSingleton<CompensationGrpc.CompensationGrpcClient>(
-                    new UnavailableCompensationClient());
-            });
-        });
-    }
-
     [Fact]
     public async Task UpdatePosition_WhenRouteAndBodyIdsDiffer_UpdatesEmployeeFromRoute()
     {
-        var compensationClient = new FailedPreconditionCompensationClient();
-        using var factory = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<CompensationGrpc.CompensationGrpcClient>();
-                services.AddSingleton<CompensationGrpc.CompensationGrpcClient>(compensationClient);
-            });
-        });
-        var dateOfBirth = new DateTime(1989, 01, 01);
+        // Arrange
         var existingEmployee = new Employee
         {
-            DateOfBirth = dateOfBirth,
+            DateOfBirth = new DateTime(1989, 1, 1),
             FirstName = "John",
             LastName = "Doe",
-            Email = "john.doe@mail.com",
+            Email = "position.route@mail.com",
             Position = "Test position",
             Status = EmployeeStatus.Active
         };
 
-        var existingEmployee2 = new Employee
+        var otherEmployee = new Employee
         {
-            DateOfBirth = dateOfBirth,
+            DateOfBirth = new DateTime(1989, 1, 1),
             FirstName = "Mark",
             LastName = "Snow",
-            Email = "mark.snow@mail.com",
+            Email = "position.other@mail.com",
             Position = "Junior Developer",
             Status = EmployeeStatus.Active
         };
 
-        await using (var scope = factory.Services.CreateAsyncScope())
+        await using (var scope = _factory.Services.CreateAsyncScope())
         {
-            var peopleDbContext = scope.ServiceProvider.GetRequiredService<PeopleDbContext>();
-            peopleDbContext.Employees.Add(existingEmployee);
-            peopleDbContext.Employees.Add(existingEmployee2);
-            await peopleDbContext.SaveChangesAsync();
+            var db = scope.ServiceProvider
+                .GetRequiredService<PeopleDbContext>();
+
+            db.Employees.AddRange(existingEmployee, otherEmployee);
+            await db.SaveChangesAsync();
         }
 
-        var employeeId = existingEmployee.Id;
-        var employeeId2 = existingEmployee2.Id;
+        var requestBody = new UpdateEmployeePositionCommand(
+            otherEmployee.Id,
+            "Test position updated");
 
-        var requestBody = new UpdateEmployeePositionCommand(employeeId2, "Test position updated");
-        using var response = await _client.PatchAsJsonAsync($"Employee/{employeeId}/position", requestBody);
-        
+        // Act
+        using var response = await _client.PatchAsJsonAsync(
+            $"/Employee/{existingEmployee.Id}/position",
+            requestBody);
+
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        await using var assertScope = factory.Services.CreateAsyncScope();
-        var db = assertScope.ServiceProvider.GetRequiredService<PeopleDbContext>();
 
-        var target = await db.Employees.AsNoTracking()
-            .SingleAsync(e => e.Id == employeeId);
-        var other = await db.Employees.AsNoTracking()
-            .SingleAsync(e => e.Id == employeeId2);
+        await using var assertScope = _factory.Services.CreateAsyncScope();
+
+        var assertDb = assertScope.ServiceProvider
+            .GetRequiredService<PeopleDbContext>();
+
+        var target = await assertDb.Employees
+            .AsNoTracking()
+            .SingleAsync(e => e.Id == existingEmployee.Id);
+
+        var other = await assertDb.Employees
+            .AsNoTracking()
+            .SingleAsync(e => e.Id == otherEmployee.Id);
 
         Assert.Equal("Test position updated", target.Position);
         Assert.Equal("Junior Developer", other.Position);
@@ -98,75 +85,81 @@ public class UpdateEmployeePositionTests : IClassFixture<PeopleApiFactory>, IAsy
     [Fact]
     public async Task UpdatePosition_WhenEmployeeIsNotActive_ReturnsConflictWithNoChanges()
     {
-        var compensationClient = new FailedPreconditionCompensationClient();
-        using var factory = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<CompensationGrpc.CompensationGrpcClient>();
-                services.AddSingleton<CompensationGrpc.CompensationGrpcClient>(compensationClient);
-            });
-        });
-        var dateOfBirth = new DateTime(1989, 01, 01);
+        // Arrange
         var existingEmployee = new Employee
         {
-            DateOfBirth = dateOfBirth,
+            DateOfBirth = new DateTime(1989, 1, 1),
             FirstName = "John",
             LastName = "Doe",
-            Email = "john.doe@mail.com",
+            Email = "position.inactive@mail.com",
             Position = "Test position",
             Status = EmployeeStatus.Inactive
         };
-        
-        await using (var scope = factory.Services.CreateAsyncScope())
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
         {
-            var peopleDbContext = scope.ServiceProvider.GetRequiredService<PeopleDbContext>();
-            peopleDbContext.Employees.Add(existingEmployee);
-            await peopleDbContext.SaveChangesAsync();
+            var db = scope.ServiceProvider
+                .GetRequiredService<PeopleDbContext>();
+
+            db.Employees.Add(existingEmployee);
+            await db.SaveChangesAsync();
         }
-        
-        var employeeId = existingEmployee.Id;
-        
-        var requestBody = new UpdateEmployeePositionCommand(employeeId, "Test position updated");
-        using var response = await _client.PatchAsJsonAsync($"Employee/{employeeId}/position", requestBody);
-        
+
+        var requestBody = new UpdateEmployeePositionCommand(
+            existingEmployee.Id,
+            "Test position updated");
+
+        // Act
+        using var response = await _client.PatchAsJsonAsync(
+            $"/Employee/{existingEmployee.Id}/position",
+            requestBody);
+
+        // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        
-        await using var assertScope = factory.Services.CreateAsyncScope();
-        var db = assertScope.ServiceProvider.GetRequiredService<PeopleDbContext>();
-        var target = await db.Employees.AsNoTracking()
-            .SingleAsync(e => e.Id == employeeId);
-        
-        Assert.Equal("Test position", target.Position);
+
+        await using var assertScope = _factory.Services.CreateAsyncScope();
+
+        var assertDb = assertScope.ServiceProvider
+            .GetRequiredService<PeopleDbContext>();
+
+        var savedEmployee = await assertDb.Employees
+            .AsNoTracking()
+            .SingleAsync(e => e.Id == existingEmployee.Id);
+
+        Assert.Equal("Test position", savedEmployee.Position);
+        Assert.Equal(EmployeeStatus.Inactive, savedEmployee.Status);
     }
 
     [Fact]
     public async Task UpdatePosition_WhenEmployeeDoesNotExist_ReturnsNotFound()
     {
-        var compensationClient = new FailedPreconditionCompensationClient();
-        using var factory = _factory.WithWebHostBuilder(builder =>
+        // Arrange
+        const int employeeId = 1300;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
         {
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<CompensationGrpc.CompensationGrpcClient>();
-                services.AddSingleton<CompensationGrpc.CompensationGrpcClient>(compensationClient);
-            });
-        });
-        var employeeId = 1300; 
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<PeopleDbContext>();
-            Assert.False(await db.Employees.AnyAsync(e => e.Id == employeeId));
+            var db = scope.ServiceProvider
+                .GetRequiredService<PeopleDbContext>();
+
+            Assert.False(
+                await db.Employees.AnyAsync(e => e.Id == employeeId));
         }
-        
-        var requestBody = new UpdateEmployeePositionCommand(employeeId, "Test position updated");
-        using var response = await _client.PatchAsJsonAsync($"Employee/{employeeId}/position", requestBody);
-        
+
+        var requestBody = new UpdateEmployeePositionCommand(
+            employeeId,
+            "Test position updated");
+
+        // Act
+        using var response = await _client.PatchAsJsonAsync(
+            $"/Employee/{employeeId}/position",
+            requestBody);
+
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    public Task DisposeAsync()
+    public void Dispose()
     {
-        return Task.CompletedTask;
+        _client.Dispose();
     }
 }
